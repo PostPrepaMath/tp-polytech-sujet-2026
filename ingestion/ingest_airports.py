@@ -16,20 +16,26 @@ from common import fetch_csv, get_connection
 
 AIRPORT_COLS = ["iata_code", "airport_name", "city", "country"]
 
-
+# à vérifier
 def _snapshot_file(day: date = None, init: bool = False):
     if init:
         return "init", "airports.csv"
     assert day is not None
     return "2025-09", f"airports_{day.isoformat()}.csv"
 
-
+# à vérifier
 def ingest_bronze(day: date = None, init: bool = False):
     # TODO : Doit télécharger le snapshot du jour vers bronze/ (ou vers init/).
     # utiliser fetch_csv() de common.py (à implémenter aussi) pour rapatrier la données.
-    raise NotImplementedError
+    if init:
+        subdir, filename =_snapshot_file(day,init)
+        fetch_csv(subdir, filename)
+    else:
+        daydir = day.strftime("%Y-%m")
+        dayfile = f"airports_{day.isoformat()}.csv"
+        fetch_csv(daydir, dayfile)
 
-
+# à vérifier
 def create_silver_table(con):
     # insert_timestamp / update_timestamp : colonnes techniques à reproduire sur TOUTES vos
     # tables silver (et, comme on le voit dans ingest_gold ci-dessous, elles suivent
