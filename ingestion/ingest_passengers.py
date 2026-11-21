@@ -9,6 +9,7 @@ from datetime import date
 from common import fetch_csv, get_connection
 
 DICO_EN_FR = {
+    "id_passager": "passenger_id",
     "prenom": "first_name",
     "nom": "last_name",
     "genre": "gender",
@@ -54,7 +55,7 @@ def create_silver_table(con):
     # TODO : créer silver_passengers avec un schéma de table UNIQUE
     # + is_active + deleted_date + insert_timestamp/update_timestamp (cf. ingest_airports.py).
     con.execute("""
-        CREATE TABLE IF NOT EXISTS silver_passenger(
+        CREATE TABLE IF NOT EXISTS silver_passengers(
             passenger_id VARCHAR PRIMARY KEY,
             first_name VARCHAR,
             last_name VARCHAR,
@@ -80,10 +81,19 @@ def ingest_silver(day: date = None, init: bool = False):
     df_en = fetch_csv(subdir_en, filename_en)
 
     # Concaténation des tableaux français-anglais en anglais
-    for key in DICO_EN_FR:
-        df_fr.rename(columns={key: DICO_EN_FR[key]})
+    df_fr.rename(columns=DICO_EN_FR, inplace=True)
 
-    df = pd.concat([df_fr,df_en])
+    df_fr["birth_date"] = pd.to_datetime(
+        df_fr["birth_date"],
+        format="%d/%m/%Y"
+    ).dt.strftime("%Y-%m-%d")
+
+    df_fr["signup_date"] = pd.to_datetime(
+            df_fr["signup_date"],
+            format="%d/%m/%Y"
+    ).dt.strftime("%Y-%m-%d")
+
+    df = pd.concat([df_fr, df_en], ignore_index=True)
 
     snapshot_date = date(2025, 8, 31) if init else day
 
@@ -93,6 +103,7 @@ def ingest_silver(day: date = None, init: bool = False):
     con = get_connection()
     create_silver_table(con)
     con.register("snapshot", df)
+    print(con.execute("SELECT * FROM snapshot").fetchdf())
 
     # Upsert : on insère les nouvelles lignes, on met à jour celles dont la clé existe déjà.
     # insert_timestamp n'apparaît PAS dans le SET du conflit : sur un conflit (ligne déjà
@@ -113,6 +124,7 @@ def ingest_silver(day: date = None, init: bool = False):
         FROM snapshot
         ON CONFLICT (passenger_id) DO UPDATE SET {set_clause}
     """)
+    print("Insertion de passager réussie")
 
     # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
     # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
@@ -126,6 +138,7 @@ def ingest_silver(day: date = None, init: bool = False):
         """,
         [snapshot_date],
     )
+    print("Update des passagers réussie")
 
     con.unregister("snapshot")
     con.close()

@@ -6,6 +6,11 @@ from datetime import date
 
 from common import fetch_csv, get_connection
 
+BOOKING_COLS = [
+    "passenger_id","flight_id","airport_id","seat_class",
+    "amount","currency","booking_date"
+]
+
 # à vérifier
 def _snapshot_file(day: date = None, init: bool = False):
     if init:
@@ -58,7 +63,52 @@ def create_silver_table(con):
 
 def ingest_silver(day: date = None, init: bool = False):
     # TODO : relire le fichier du jour depuis bronze/ et charger les lignes dans silver_bookings.
-    raise NotImplementedError
+    """Relit le snapshot depuis bronze/ et l'upsert dans silver_airports."""
+    subdir, filename = _snapshot_file(day, init)
+    df = fetch_csv(subdir, filename)  # déjà en cache local : pas de nouveau téléchargement
+    snapshot_date = date(2025, 8, 31) if init else day
+
+    df = df.copy()
+    df["is_active"] = True
+
+    con = get_connection()
+    create_silver_table(con)
+    con.register("snapshot", df)
+
+    # Upsert : on insère les nouvelles lignes, on met à jour celles dont la clé existe déjà.
+    # insert_timestamp n'apparaît PAS dans le SET du conflit : sur un conflit (ligne déjà
+    # connue), on veut garder sa valeur d'origine, pas l'écraser. update_timestamp, lui, est
+    # rafraîchi à chaque passage, qu'il y ait eu un vrai changement de valeur ou non.
+    # deleted_date est remis à NULL sur un conflit : la ligne est présente dans le snapshot du
+    # jour, donc active — si elle avait été désactivée puis réapparaissait (pas le cas dans ce
+    # jeu de données, mais une vraie source pourrait le faire), elle redevient active proprement.
+    update_cols = BOOKING_COLS
+    set_clause = ", ".join(f"{c} = excluded.{c}" for c in update_cols)
+    set_clause += ", update_timestamp = now()"
+
+    con.execute(f"""
+        INSERT INTO silver_bookings (
+            booking_id, {", ".join(update_cols)}, insert_timestamp, update_timestamp
+        )
+        SELECT booking_id, {", ".join(update_cols)}, NULL, now(), now()
+        FROM snapshot
+        ON CONFLICT (booking_id) DO UPDATE SET {set_clause}
+    """)
+
+    # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
+    # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
+    # deleted_date prend la date du jour où la disparition est constatée, et ne bougera plus
+    # ensuite (contrairement à update_timestamp, rafraîchi lui aussi ici, qui continuerait de
+    # bouger si un jour ultérieur retouchait la ligne pour une autre raison).
+    con.execute(
+        """
+        UPDATE silver_bookings SET update_timestamp = now()
+        WHERE booking_id NOT IN (SELECT booking_id FROM snapshot)
+        """
+    )
+
+    con.unregister("snapshot")
+    con.close()
 
 
 def ingest_gold():

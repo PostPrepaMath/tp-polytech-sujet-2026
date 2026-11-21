@@ -6,6 +6,11 @@ from datetime import date
 
 from common import fetch_csv, get_connection
 
+FLIGHT_COLS = [
+    "flight_number", "airline", "origin_airport_id","destination_airport_id",
+    "flight_date", "departure_time", "arrival_time", "aircraft_type"
+]
+
 # à vérifier
 def _snapshot_file(day: date = None, init: bool = False):
     if init:
@@ -30,16 +35,16 @@ def create_silver_table(con):
     # + insert_timestamp/update_timestamp, cf. ingest_airports.py).
     con.execute("""
         CREATE TABLE IF NOT EXISTS silver_flights(
-            filght_id VARCHAR PRIMARY KEY,
-            filght_num VARCHAR,
+            flight_id VARCHAR PRIMARY KEY,
+            flight_number VARCHAR,
             airline VARCHAR,
             origin_airport_id VARCHAR,
             CONSTRAINT fk_origin_airport 
-                FOREIGN KEY (origin_airport) 
+                FOREIGN KEY (origin_airport_id) 
                 REFERENCES silver_airports(airport_id),
             destination_airport_id VARCHAR,
             CONSTRAINT fk_destination_airport 
-                FOREIGN KEY (destination_airport) 
+                FOREIGN KEY (destination_airport_id) 
                 REFERENCES silver_airports(airport_id),
             flight_date DATE,
             departure_time TIME,
@@ -55,7 +60,52 @@ def create_silver_table(con):
 
 def ingest_silver(day: date = None, init: bool = False):
     # TODO : chargement de la données dans silver_flights par flight_id 
-    raise NotImplementedError
+    subdir, filename = _snapshot_file(day, init)
+    df = fetch_csv(subdir, filename)  # déjà en cache local : pas de nouveau téléchargement
+    snapshot_date = date(2025, 8, 31) if init else day
+
+    df = df.copy()
+    df["is_active"] = True
+
+    con = get_connection()
+    create_silver_table(con)
+    con.register("snapshot", df)
+
+    # Upsert : on insère les nouvelles lignes, on met à jour celles dont la clé existe déjà.
+    # insert_timestamp n'apparaît PAS dans le SET du conflit : sur un conflit (ligne déjà
+    # connue), on veut garder sa valeur d'origine, pas l'écraser. update_timestamp, lui, est
+    # rafraîchi à chaque passage, qu'il y ait eu un vrai changement de valeur ou non.
+    # deleted_date est remis à NULL sur un conflit : la ligne est présente dans le snapshot du
+    # jour, donc active — si elle avait été désactivée puis réapparaissait (pas le cas dans ce
+    # jeu de données, mais une vraie source pourrait le faire), elle redevient active proprement.
+    update_cols = FLIGHT_COLS + ["is_active"]
+    set_clause = ", ".join(f"{c} = excluded.{c}" for c in update_cols)
+    set_clause += ", deleted_date = NULL, update_timestamp = now()"
+
+    con.execute(f"""
+        INSERT INTO silver_flights (
+            flight_id, {", ".join(update_cols)}, deleted_date, insert_timestamp, update_timestamp
+        )
+        SELECT flight_id, {", ".join(update_cols)}, NULL, now(), now()
+        FROM snapshot
+        ON CONFLICT (flight_id) DO UPDATE SET {set_clause}
+    """)
+
+    # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
+    # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
+    # deleted_date prend la date du jour où la disparition est constatée, et ne bougera plus
+    # ensuite (contrairement à update_timestamp, rafraîchi lui aussi ici, qui continuerait de
+    # bouger si un jour ultérieur retouchait la ligne pour une autre raison).
+    con.execute(
+        """
+        UPDATE silver_flights SET is_active = false, deleted_date = ?, update_timestamp = now()
+        WHERE is_active = true AND flight_id NOT IN (SELECT flight_id FROM snapshot)
+        """,
+        [snapshot_date],
+    )
+
+    con.unregister("snapshot")
+    con.close()
 
 
 def ingest_gold():
