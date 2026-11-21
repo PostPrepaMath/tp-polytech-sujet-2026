@@ -36,23 +36,23 @@ def create_silver_table(con):
         CREATE TABLE IF NOT EXISTS silver_bookings (
             booking_id VARCHAR PRIMARY KEY,
             passenger_id VARCHAR,
-            CONSTRAINT fk_passenger_booking 
-                FOREIGN KEY (passenger_id) 
-                REFERENCES silver_passengers(passenger_id),
+            --CONSTRAINT fk_passenger_booking 
+                --FOREIGN KEY (passenger_id) 
+                --REFERENCES silver_passengers(passenger_id),
             flight_id VARCHAR,
-            CONSTRAINT fk_flight_booking 
-                FOREIGN KEY (flight_id) 
-                REFERENCES silver_flights(flight_id),
+            --CONSTRAINT fk_flight_booking 
+                --FOREIGN KEY (flight_id) 
+                --REFERENCES silver_flights(flight_id),
             airport_id VARCHAR,
-            CONSTRAINT fk_airport_booking 
-                FOREIGN KEY (airport_id) 
-                REFERENCES silver_airports(airport_id),
+            --CONSTRAINT fk_airport_booking 
+                --FOREIGN KEY (airport_id) 
+                --REFERENCES silver_airports(airport_id),
             seat_class VARCHAR,
             amount DOUBLE,
             currency VARCHAR,
-            CONSTRAINT fk_currency_booking 
-                FOREIGN KEY (currency) 
-                REFERENCES dim_currency(currency),
+            --CONSTRAINT fk_currency_booking 
+                --FOREIGN KEY (currency) 
+                --REFERENCES dim_currency(currency),
             booking_date DATE,
             booking_channel DATE,
             insert_timestamp TIMESTAMP,
@@ -90,7 +90,7 @@ def ingest_silver(day: date = None, init: bool = False):
         INSERT INTO silver_bookings (
             booking_id, {", ".join(update_cols)}, insert_timestamp, update_timestamp
         )
-        SELECT booking_id, {", ".join(update_cols)}, NULL, now(), now()
+        SELECT booking_id, {", ".join(update_cols)}, now(), now()
         FROM snapshot
         ON CONFLICT (booking_id) DO UPDATE SET {set_clause}
     """)
@@ -112,8 +112,52 @@ def ingest_silver(day: date = None, init: bool = False):
 
 
 def ingest_gold():
-    # TODO : reconstruire la/les table(s) de gold avec les données booking à partir de silver_bookings. 
-    raise NotImplementedError
+    # TODO : à vérifier
+    # - Ajouter les clés étrangères
+    # - Ajouter amount_eur avec les calculs associés
+
+    con = get_connection()
+
+    # copie table des réservations
+    con.execute("""
+            
+
+            CREATE TABLE IF NOT EXISTS fact_booking (
+                booking_id VARCHAR PRIMARY KEY,
+                passenger_id VARCHAR REFERENCES dim_passenger(passenger_id),
+                flight_id VARCHAR REFERENCES dim_flight(flight_id),
+                airport_id VARCHAR REFERENCES dim_airport(airport_id),
+                seat_class VARCHAR,
+                amount DOUBLE,
+                currency VARCHAR REFERENCES dim_currency(currency),
+                booking_date DATE,
+                booking_channel DATE,
+                insert_timestamp TIMESTAMP,
+                update_timestamp TIMESTAMP
+            )
+        """)
+
+    # copie des valeurs
+    con.execute("""
+        INSERT INTO fact_booking
+        SELECT * FROM silver_bookings
+    """)
+
+    # Ajout colonne amount_eur
+    con.execute("""
+        ALTER TABLE fact_booking
+        ADD amount_eur DOUBLE
+    """)
+
+    # Remplissage des valeurs amoun_eur
+    con.execute("""
+        UPDATE fact_booking AS fb
+        SET amount_eur = fb.amount * dc.rate_to_eur
+        FROM dim_currency AS dc
+        fb.currency = dc.currency
+    """)
+
+    con.close()
 
 
 def init():

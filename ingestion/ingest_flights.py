@@ -11,14 +11,12 @@ FLIGHT_COLS = [
     "flight_date", "departure_time", "arrival_time", "aircraft_type"
 ]
 
-# à vérifier
 def _snapshot_file(day: date = None, init: bool = False):
     if init:
         return "init", "flights.csv"
     assert day is not None
     return "2025-09", f"flights_{day.isoformat()}.csv"
 
-# à vérifier
 def ingest_bronze(day: date = None, init: bool = False):
     # TODO : télécharger le snapshot flights du jour (ou de init/) vers bronze/.
     if init:
@@ -29,7 +27,6 @@ def ingest_bronze(day: date = None, init: bool = False):
         dayfile = f"flights_{day.isoformat()}.csv"
         fetch_csv(daydir, dayfile)
 
-# à vérifier
 def create_silver_table(con):
     # TODO : créer silver_flights (colonnes du CSV source + is_active + deleted_date
     # + insert_timestamp/update_timestamp, cf. ingest_airports.py).
@@ -39,13 +36,13 @@ def create_silver_table(con):
             flight_number VARCHAR,
             airline VARCHAR,
             origin_airport_id VARCHAR,
-            CONSTRAINT fk_origin_airport 
-                FOREIGN KEY (origin_airport_id) 
-                REFERENCES silver_airports(airport_id),
+            --CONSTRAINT fk_origin_airport 
+                --FOREIGN KEY (origin_airport_id) 
+                --REFERENCES silver_airports(airport_id),
             destination_airport_id VARCHAR,
-            CONSTRAINT fk_destination_airport 
-                FOREIGN KEY (destination_airport_id) 
-                REFERENCES silver_airports(airport_id),
+            --CONSTRAINT fk_destination_airport 
+                --FOREIGN KEY (destination_airport_id) 
+                --REFERENCES silver_airports(airport_id),
             flight_date DATE,
             departure_time TIME,
             arrival_time TIME,
@@ -109,8 +106,44 @@ def ingest_silver(day: date = None, init: bool = False):
 
 
 def ingest_gold():
-    # TODO : reconstruire la/les table(s) de gold avec les données flights à partir de silver_flights
-    raise NotImplementedError
+    # TODO : à tester
+
+    con = get_connection()
+
+    # remarque : séparer la création et le copiage des données
+    # puisque les commandes alter table + FK ne fonctionnent pas
+    # sur duckdb
+
+    # copie table des vols
+
+    con.execute(f"""
+
+        CREATE TABLE dim_flight (
+            flight_id VARCHAR PRIMARY KEY,
+            flight_number VARCHAR,
+            airline VARCHAR,
+            origin_airport_id VARCHAR REFERENCES dim_airport(airport_id),
+            destination_airport_id VARCHAR REFERENCES dim_airport(airport_id),
+            flight_date DATE,
+            departure_time TIME,
+            arrival_time TIME,
+            aircraft_type VARCHAR,
+            is_active BOOLEAN,
+            deleted_date DATE,
+            insert_timestamp TIMESTAMP,
+            update_timestamp TIMESTAMP
+        )
+    """)
+
+    # Ajout des valeurs
+
+    con.execute("""
+        INSERT INTO dim_flight
+        SELECT * FROM silver_flights
+        WHERE is_active = true
+    """)
+
+    con.close()
 
 
 def init():

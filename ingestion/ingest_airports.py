@@ -113,7 +113,16 @@ def ingest_gold():
     con = get_connection()
     # SELECT * : insert_timestamp/update_timestamp suivent automatiquement en gold, sans rien
     # ajouter de spécifique ici.
-    con.execute("CREATE OR REPLACE TABLE dim_airport AS SELECT * FROM silver_airports")
+    con.execute("""
+        DROP TABLE IF EXISTS fact_booking CASCADE;
+        DROP TABLE IF EXISTS dim_flight CASCADE;
+        DROP TABLE IF EXISTS dim_airport CASCADE;
+        DROP TABLE IF EXISTS dim_passenger CASCADE;
+
+        CREATE TABLE dim_airport AS SELECT * FROM silver_airports;
+    """)
+    # Ajout de la contrainte de clé primaire (non copié précédemment)
+    con.execute("ALTER TABLE dim_airport ADD CONSTRAINT pk_dim_airport PRIMARY KEY (airport_id)")
     con.close()
 
 

@@ -21,21 +21,18 @@ DICO_EN_FR = {
 
 PASSENGER_COLS = ["first_name","last_name","gender","nationality","email","birth_date","signup_date"]
 
-# à vérifier
 def _snapshot_file_fr(day: date = None, init: bool = False):
     if init:
         return "init", "passengers_fr.csv"
     assert day is not None
     return "2025-09", f"passengers_fr_{day.isoformat()}.csv"
 
-# à vérifier
 def _snapshot_file_en(day: date = None, init: bool = False):
     if init:
         return "init", "passengers_en.csv"
     assert day is not None
     return "2025-09", f"passengers_en_{day.isoformat()}.csv"
 
-# à vérifier
 def ingest_bronze(day: date = None, init: bool = False):
     # TODO : télécharger les deux snapshots (EN et FR) du jour (ou de init/) vers bronze/.
     if init:
@@ -50,7 +47,7 @@ def ingest_bronze(day: date = None, init: bool = False):
         fetch_csv(daydir, dayfile_fr)
         fetch_csv(daydir, dayfile_en)
 
-# à vérifier
+
 def create_silver_table(con):
     # TODO : créer silver_passengers avec un schéma de table UNIQUE
     # + is_active + deleted_date + insert_timestamp/update_timestamp (cf. ingest_airports.py).
@@ -103,7 +100,6 @@ def ingest_silver(day: date = None, init: bool = False):
     con = get_connection()
     create_silver_table(con)
     con.register("snapshot", df)
-    print(con.execute("SELECT * FROM snapshot").fetchdf())
 
     # Upsert : on insère les nouvelles lignes, on met à jour celles dont la clé existe déjà.
     # insert_timestamp n'apparaît PAS dans le SET du conflit : sur un conflit (ligne déjà
@@ -124,7 +120,6 @@ def ingest_silver(day: date = None, init: bool = False):
         FROM snapshot
         ON CONFLICT (passenger_id) DO UPDATE SET {set_clause}
     """)
-    print("Insertion de passager réussie")
 
     # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
     # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
@@ -138,15 +133,24 @@ def ingest_silver(day: date = None, init: bool = False):
         """,
         [snapshot_date],
     )
-    print("Update des passagers réussie")
 
     con.unregister("snapshot")
     con.close()
 
 
 def ingest_gold():
-    # TODO : reconstruire la/les table(s) de gold avec les données passengers à partir de silver_passengers
-    raise NotImplementedError
+    # TODO : à vérifier
+    con = get_connection()
+    # SELECT * : insert_timestamp/update_timestamp suivent automatiquement en gold, sans rien
+    # ajouter de spécifique ici.
+
+    # copie table des passagers actifs
+    sql = "CREATE TABLE dim_passenger AS "
+    sql+= "SELECT * FROM silver_passengers "
+    sql+= "WHERE is_active = true"
+
+    con.execute(sql)
+    con.close()
 
 
 def init():
