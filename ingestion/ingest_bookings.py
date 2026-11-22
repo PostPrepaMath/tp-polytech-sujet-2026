@@ -120,41 +120,23 @@ def ingest_gold():
 
     # copie table des réservations
     con.execute("""
-            
-
-            CREATE TABLE IF NOT EXISTS fact_booking (
-                booking_id VARCHAR PRIMARY KEY,
-                passenger_id VARCHAR REFERENCES dim_passenger(passenger_id),
-                flight_id VARCHAR REFERENCES dim_flight(flight_id),
-                airport_id VARCHAR REFERENCES dim_airport(airport_id),
-                seat_class VARCHAR,
-                amount DOUBLE,
-                currency VARCHAR REFERENCES dim_currency(currency),
-                booking_date DATE,
-                booking_channel DATE,
-                insert_timestamp TIMESTAMP,
-                update_timestamp TIMESTAMP
-            )
-        """)
-
-    # copie des valeurs
-    con.execute("""
-        INSERT INTO fact_booking
-        SELECT * FROM silver_bookings
-    """)
-
-    # Ajout colonne amount_eur
-    con.execute("""
-        ALTER TABLE fact_booking
-        ADD amount_eur DOUBLE
-    """)
-
-    # Remplissage des valeurs amoun_eur
-    con.execute("""
-        UPDATE fact_booking AS fb
-        SET amount_eur = fb.amount * dc.rate_to_eur
-        FROM dim_currency AS dc
-        fb.currency = dc.currency
+        CREATE OR REPLACE TABLE fact_booking AS
+        SELECT
+            sb.booking_id,
+            sb.passenger_id,
+            sb.flight_id,
+            sb.airport_id,
+            sb.seat_class,
+            sb.amount,
+            ROUND(sb.amount * dc.rate_to_eur, 2) AS amount_eur,
+            sb.currency,
+            sb.booking_date,
+            sb.booking_channel,
+            sb.insert_timestamp,
+            sb.update_timestamp
+        FROM silver_bookings AS sb
+        LEFT JOIN dim_currency AS dc
+            ON sb.currency = dc.currency
     """)
 
     con.close()

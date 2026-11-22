@@ -116,31 +116,10 @@ def ingest_gold():
 
     # copie table des vols
 
-    con.execute(f"""
-
-        CREATE TABLE dim_flight (
-            flight_id VARCHAR PRIMARY KEY,
-            flight_number VARCHAR,
-            airline VARCHAR,
-            origin_airport_id VARCHAR REFERENCES dim_airport(airport_id),
-            destination_airport_id VARCHAR REFERENCES dim_airport(airport_id),
-            flight_date DATE,
-            departure_time TIME,
-            arrival_time TIME,
-            aircraft_type VARCHAR,
-            is_active BOOLEAN,
-            deleted_date DATE,
-            insert_timestamp TIMESTAMP,
-            update_timestamp TIMESTAMP
-        )
-    """)
-
-    # Ajout des valeurs
-
     con.execute("""
-        INSERT INTO dim_flight
+        CREATE OR REPLACE TABLE dim_flight AS
         SELECT * FROM silver_flights
-        WHERE is_active = true
+        WHERE is_active = TRUE
     """)
 
     con.close()

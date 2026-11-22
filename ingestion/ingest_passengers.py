@@ -145,11 +145,12 @@ def ingest_gold():
     # ajouter de spécifique ici.
 
     # copie table des passagers actifs
-    sql = "CREATE TABLE dim_passenger AS "
-    sql+= "SELECT * FROM silver_passengers "
-    sql+= "WHERE is_active = true"
 
-    con.execute(sql)
+    con.execute("""
+        CREATE TABLE dim_passenger AS 
+        SELECT * FROM silver_passengers 
+        WHERE is_active = true
+    """)
     con.close()
 
 
