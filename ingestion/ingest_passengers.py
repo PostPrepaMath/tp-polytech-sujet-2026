@@ -121,11 +121,6 @@ def ingest_silver(day: date = None, init: bool = False):
         ON CONFLICT (passenger_id) DO UPDATE SET {set_clause}
     """)
 
-    # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
-    # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
-    # deleted_date prend la date du jour où la disparition est constatée, et ne bougera plus
-    # ensuite (contrairement à update_timestamp, rafraîchi lui aussi ici, qui continuerait de
-    # bouger si un jour ultérieur retouchait la ligne pour une autre raison).
     con.execute(
         """
         UPDATE silver_passengers SET is_active = false, deleted_date = ?, update_timestamp = now()

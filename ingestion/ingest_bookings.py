@@ -11,16 +11,13 @@ BOOKING_COLS = [
     "amount","currency","booking_date"
 ]
 
-# à vérifier
 def _snapshot_file(day: date = None, init: bool = False):
     if init:
         return "init", "bookings.csv"
     assert day is not None
     return "2025-09", f"bookings_{day.isoformat()}.csv"
 
-# à vérifier
 def ingest_bronze(day: date = None, init: bool = False):
-    # TODO : télécharger le fichier bookings du jour (ou de init/) vers bronze/.
     if init:
         subdir, filename =_snapshot_file(day,init)
         fetch_csv(subdir, filename)
@@ -29,9 +26,7 @@ def ingest_bronze(day: date = None, init: bool = False):
         dayfile = f"bookings_{day.isoformat()}.csv"
         fetch_csv(daydir, dayfile)
 
-# à vérifier
 def create_silver_table(con):
-    # TODO : créer silver_bookings (colonnes du CSV source + insert_timestamp/update_timestamp, cf. ingest_airports.py).
     con.execute("""
         CREATE TABLE IF NOT EXISTS silver_bookings (
             booking_id VARCHAR PRIMARY KEY,
@@ -62,7 +57,6 @@ def create_silver_table(con):
 
 
 def ingest_silver(day: date = None, init: bool = False):
-    # TODO : relire le fichier du jour depuis bronze/ et charger les lignes dans silver_bookings.
     """Relit le snapshot depuis bronze/ et l'upsert dans silver_airports."""
     subdir, filename = _snapshot_file(day, init)
     df = fetch_csv(subdir, filename)  # déjà en cache local : pas de nouveau téléchargement
@@ -95,11 +89,6 @@ def ingest_silver(day: date = None, init: bool = False):
         ON CONFLICT (booking_id) DO UPDATE SET {set_clause}
     """)
 
-    # Les aéroports absents du snapshot du jour ont disparu de la source : on les désactive,
-    # sans jamais les supprimer physiquement (des réservations passées peuvent déjà les référencer).
-    # deleted_date prend la date du jour où la disparition est constatée, et ne bougera plus
-    # ensuite (contrairement à update_timestamp, rafraîchi lui aussi ici, qui continuerait de
-    # bouger si un jour ultérieur retouchait la ligne pour une autre raison).
     con.execute(
         """
         UPDATE silver_bookings SET update_timestamp = now()
@@ -112,9 +101,6 @@ def ingest_silver(day: date = None, init: bool = False):
 
 
 def ingest_gold():
-    # TODO : à vérifier
-    # - Ajouter les clés étrangères
-    # - Ajouter amount_eur avec les calculs associés
 
     con = get_connection()
 
